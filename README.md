@@ -12,13 +12,13 @@ This gem is ideal for APIs, background jobs, or any system that needs simple, ef
 To install the gem and add it to your application's Gemfile, execute:
 
 ```bash
-$ bundle add limit
+$ bundle add co-limit
 ```
 
 If you are not using Bundler, you can install the gem directly by running:
 
 ```bash
-$ gem install limit
+$ gem install co-limit
 ```
 
 ## Usage
