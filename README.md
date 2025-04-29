@@ -1,10 +1,11 @@
 
 # Limit Gem
 
-This gem provides a flexible rate-limiting mechanism using Redis. It supports two types of rate-limiting strategies:
+Gem that provides flexible, Redis-backed rate limiting utilities. It supports both Fixed Window and Rolling Window (Sliding Log) strategies, to easily control the number of allowed requests for a given identifier within a time window.
 
-- **Fixed Window Rate Limiter**: Allows a specified number of requests in a fixed time window.
-- **Rolling Window Rate Limiter**: Uses a sliding window to track the number of requests in a rolling time window.
+You can define rate-limiting rules dynamically using a Proc, and configure Redis via environment variables (REDIS_HOST, REDIS_PORT, REDIS_PASSWORD) or by passing connection details directly.
+
+This gem is ideal for APIs, background jobs, or any system that needs simple, efficient throttling logic.
 
 ## Installation
 
