@@ -39,5 +39,5 @@ jobs:
         env:
           REDIS_HOST: localhost
           REDIS_PORT: 6379
-          REDIS_PASSWORD: "" # or set if required
+          REDIS_PASSWORD: ""
         run: bundle exec rake
