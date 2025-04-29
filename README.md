@@ -1,34 +1,136 @@
-# Limit
 
-TODO: Delete this and the text below, and describe your gem
+# Limit Gem
 
-Welcome to your new gem! In this directory, you'll find the files you need to be able to package up your Ruby library into a gem. Put your Ruby code in the file `lib/limit`. To experiment with that code, run `bin/console` for an interactive prompt.
+This gem provides a flexible rate-limiting mechanism using Redis. It supports two types of rate-limiting strategies:
+
+- **Fixed Window Rate Limiter**: Allows a specified number of requests in a fixed time window.
+- **Rolling Window Rate Limiter**: Uses a sliding window to track the number of requests in a rolling time window.
 
 ## Installation
 
-TODO: Replace `UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG` with your gem name right after releasing it to RubyGems.org. Please do not do it earlier due to security reasons. Alternatively, replace this section with instructions to install your gem from git if you don't plan to release to RubyGems.org.
+To install the gem and add it to your application's Gemfile, execute:
 
-Install the gem and add to the application's Gemfile by executing:
+```bash
+$ bundle add limit
+```
 
-    $ bundle add UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG
+If you are not using Bundler, you can install the gem directly by running:
 
-If bundler is not being used to manage dependencies, install the gem by executing:
-
-    $ gem install UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG
+```bash
+$ gem install limit
+```
 
 ## Usage
 
-TODO: Write usage instructions here
+### Example Usage
+
+Here's an example of how to use the rate limiter in your application:
+
+```ruby
+sync_limit_calculator = lambda do |key| 
+  pms_name = key.split(':').last.to_sym
+  SITE_LIMITS.fetch(pms_name, :default)
+end
+
+rate_limiter = Limit::RollingWindowRateLimiter.new(
+  identifier_prefix: 'access', 
+  limit_calculator: sync_limit_calculator,
+  host: '127.0.0.1', 
+  port: 6379, 
+  password: 'abcd1234'
+)
+
+key = '007:x'
+success_count = 0
+a = Time.now
+11.times do
+  allowed = rate_limiter.allowed?(key)
+  success_count += 1 if allowed
+end
+
+sleep 5 - (Time.now - a) + 0.5  # wait until the next window
+allowed = rate_limiter.allowed?(key)  # request will be allowed
+success_count += 1 if allowed
+
+puts "Success count: #{success_count}"  # Expected to be 11
+```
+
+### Redis Configuration
+
+You can configure the Redis connection either by passing the connection details as arguments or by setting environment variables.
+
+- **Option 1**: Pass the connection details directly when initializing the limiter:
+
+  ```ruby
+  rate_limiter = Limit::RollingWindowRateLimiter.new(
+    identifier_prefix: 'access', 
+    limit_calculator: sync_limit_calculator,
+    host: '127.0.0.1', 
+    port: 6379, 
+    password: 'abcd1234'
+  )
+  ```
+
+- **Option 2**: Set the connection details as environment variables (`REDIS_HOST`, `REDIS_PORT`, and `REDIS_PASSWORD`), and the gem will automatically use them:
+
+  ```bash
+  export REDIS_HOST='127.0.0.1'
+  export REDIS_PORT='6379'
+  export REDIS_PASSWORD='abcd1234'
+  ```
+
+  In this case, the gem will use these environment variables to establish the Redis connection.
+
+### Key Points:
+
+- **identifier_prefix**: A namespace prefix for Redis keys (e.g., `"access"`).
+- **limit_calculator**: A `Proc` that takes a key (e.g., `"user_id:site_name"`) and returns a hash with `max_requests` and `window_seconds`.
+
+### Supported Rate Limiters:
+
+- **Fixed Window Rate Limiter**:
+  Allows a specified number of requests within a fixed time window. This method can cause burst traffic as it doesn't account for requests made outside of the window until it resets.
+
+- **Rolling Window Rate Limiter**:
+  Uses a sliding window mechanism, where only requests made within the last `n` seconds are counted. It provides more consistent traffic flow but can be more resource-intensive.
 
 ## Development
 
-After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake test` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
+After checking out the repo, install the dependencies by running:
 
-To install this gem onto your local machine, run `bundle exec rake install`. To release a new version, update the version number in `version.rb`, and then run `bundle exec rake release`, which will create a git tag for the version, push git commits and the created tag, and push the `.gem` file to [rubygems.org](https://rubygems.org).
+```bash
+$ bin/setup
+```
+
+To run tests, execute:
+
+```bash
+$ rake test
+```
+
+For an interactive prompt, run:
+
+```bash
+$ bin/console
+```
+
+To install the gem locally:
+
+```bash
+$ bundle exec rake install
+```
+
+To release a new version, update the version number in `version.rb`, and run:
+
+```bash
+$ bundle exec rake release
+```
+
+This will create a git tag for the new version, push the tag, and push the gem to [rubygems.org](https://rubygems.org).
 
 ## Contributing
 
-Bug reports and pull requests are welcome on GitHub at https://github.com/[USERNAME]/limit. This project is intended to be a safe, welcoming space for collaboration, and contributors are expected to adhere to the [code of conduct](https://github.com/[USERNAME]/limit/blob/main/CODE_OF_CONDUCT.md).
+Bug reports and pull requests are welcome on GitHub at https://github.com/cosmicoppai/limit. This project aims to be a safe, welcoming space for collaboration. Contributors are expected to adhere to the [code of conduct](https://github.com/cosmicoppai/limit/blob/main/CODE_OF_CONDUCT.md).
 
 ## License
 
@@ -36,4 +138,4 @@ The gem is available as open source under the terms of the [MIT License](https:/
 
 ## Code of Conduct
 
-Everyone interacting in the Limit project's codebases, issue trackers, chat rooms and mailing lists is expected to follow the [code of conduct](https://github.com/[USERNAME]/limit/blob/main/CODE_OF_CONDUCT.md).
+Everyone interacting in the Limit project's codebases, issue trackers, chat rooms, and mailing lists is expected to follow the [code of conduct](https://github.com/cosmicoppai/limit/blob/main/CODE_OF_CONDUCT.md).
