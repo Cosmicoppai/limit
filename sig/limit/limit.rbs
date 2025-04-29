@@ -1,0 +1,25 @@
+import "redis"
+
+module Limit
+class BaseLimiter
+@redis: Redis | nil
+
+def self.connection: -> nil
+
+attr_reader identifier_prefix: String
+attr_reader limit_calculator: Proc
+
+def allowed?: (String) -> bool
+
+def get_current_limit: (String) -> Hash[String, Integer]
+
+def get_key: (String) -> String
+
+def current_micros: (nil) -> Integer
+
+def redis_pipeline: () { (Redis) -> untyped } -> untyped
+
+
+
+end
+end
