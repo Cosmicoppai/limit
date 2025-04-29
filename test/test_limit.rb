@@ -21,8 +21,7 @@ class TestLimit < Minitest::Test
       SITE_LIMITS.fetch(pms_name, :default)
     end
 
-    rate_limiter = Limit::RollingWindowRateLimiter.new(identifier_prefix: 'access', limit_calculator: access_limit_calculator,
-                                                host: '127.0.0.1', port: 6379, password: 'abcd1234')
+    rate_limiter = Limit::RollingWindowRateLimiter.new(identifier_prefix: 'access', limit_calculator: access_limit_calculator)
 
     #----------------------------------------------------------- ❣️
 
