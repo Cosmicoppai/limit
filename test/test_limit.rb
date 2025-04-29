@@ -16,12 +16,12 @@ class TestLimit < Minitest::Test
 
   def test_rolling_window_rate_limiter
 
-    sync_limit_calculator = lambda do |key| # key:- "user_id:site_name" [example]
+    access_limit_calculator = lambda do |key| # key:- "user_id:site_name" [example]
       pms_name = key.split(':').last.to_sym
       SITE_LIMITS.fetch(pms_name, :default)
     end
 
-    rate_limiter = RollingWindowRateLimiter.new(identifier_prefix: 'access', limit_calculator: sync_limit_calculator,
+    rate_limiter = Limit::RollingWindowRateLimiter.new(identifier_prefix: 'access', limit_calculator: access_limit_calculator,
                                                 host: '127.0.0.1', port: 6379, password: 'abcd1234')
 
     #----------------------------------------------------------- ❣️
