@@ -3,7 +3,7 @@
 require_relative "lib/limit/version"
 
 Gem::Specification.new do |spec|
-  spec.name = "limit"
+  spec.name = "co-limit"
   spec.version = Limit::VERSION
   spec.authors = ["CosmicOppai"]
   spec.email = ["cosmicoppai@protonmail.com"]
