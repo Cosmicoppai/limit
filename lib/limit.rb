@@ -34,6 +34,7 @@ module Limit
         if password && !password.empty?
           Redis.new(host: host, port: port, password: password)
         else
+          @logger.warn("Connecting without password")
           Redis.new(host: host, port: port)
         end
       end
