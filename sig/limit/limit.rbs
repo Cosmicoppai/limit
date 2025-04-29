@@ -1,13 +1,26 @@
-import "redis"
+type redis = untyped
 
 module Limit
+VERSION: String
+
 class BaseLimiter
-@redis: Redis | nil
+self.@redis: redis
+@logger: Logger
+
+@redis: redis | nil
 
 def self.connection: -> nil
 
+def self.create_connection: (String, Integer, String) -> redis
+
+def self.log: (String, String) -> nil
+
+def self.logger: -> Logger
+
 attr_reader identifier_prefix: String
 attr_reader limit_calculator: Proc
+
+def initialize: -> untyped
 
 def allowed?: (String) -> bool
 
@@ -17,9 +30,8 @@ def get_key: (String) -> String
 
 def current_micros: (nil) -> Integer
 
-def redis_pipeline: () { (Redis) -> untyped } -> untyped
+def log: (String, String) -> nil
 
-
-
+def redis_pipeline: () { (redis) -> untyped } -> untyped
 end
 end
