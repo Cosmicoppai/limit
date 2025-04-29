@@ -31,8 +31,13 @@ module Limit
       private
 
       def create_connection(host:, port:, password:)
-        Redis.new(host: host, port: port, password: password)
+        if password && !password.empty?
+          Redis.new(host: host, port: port, password: password)
+        else
+          Redis.new(host: host, port: port)
+        end
       end
+
     end
 
     def initialize(identifier_prefix:, limit_calculator:, host: nil, port: nil, password: nil)
