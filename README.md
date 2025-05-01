@@ -3,7 +3,7 @@
 
 Gem that provides flexible, Redis-backed rate limiting utilities. It supports both Fixed Window and Rolling Window (Sliding Log) strategies, to easily control the number of allowed requests for a given identifier within a time window.
 
-You can define rate-limiting rules dynamically using a Proc, and configure Redis via environment variables (REDIS_HOST, REDIS_PORT, REDIS_PASSWORD) or by passing connection details directly.
+You can define rate-limiting rules dynamically using a lambda, and configure Redis via environment variables (REDIS_HOST, REDIS_PORT, REDIS_PASSWORD) or by passing connection details directly.
 
 This gem is ideal for APIs, background jobs, or any system that needs simple, efficient throttling logic.
 
@@ -85,7 +85,7 @@ You can configure the Redis connection either by passing the connection details 
 ### Key Points:
 
 - **identifier_prefix**: A namespace prefix for Redis keys (e.g., `"access"`).
-- **limit_calculator**: A `Proc` that takes a key (e.g., `"user_id:site_name"`) and returns a hash with `max_requests` and `window_seconds`.
+- **limit_calculator**: A `Lambda` that takes a key (e.g., `"user_id:site_name"`) and returns a hash with `max_requests` and `window_seconds`.
 
 ### Supported Rate Limiters:
 

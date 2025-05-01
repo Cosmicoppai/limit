@@ -44,13 +44,13 @@ module Limit
     def initialize(identifier_prefix:, limit_calculator:, host: nil, port: nil, password: nil)
 
     # @param identifier_prefix: [String] A namespace prefix for redis keys for this limiter instance
-    # @param limit_calculator: [Proc] A method that takes a key(String) and returns hash: {max_requests: Integer, window_seconds: Integer}
+    # @param limit_calculator: [Lambda] A method that takes a key(String) and returns hash: {max_requests: Integer, window_seconds: Integer}
 
       unless identifier_prefix.is_a?(String) && !identifier_prefix.empty?
         raise ArgumentError, 'identifier_prefix must be a non-empty String'
       end
 
-      raise ArgumentError, 'limit_calculator must be a Proc' unless limit_calculator.is_a?(Proc)
+      raise ArgumentError, 'limit_calculator must be a Lambda' unless limit_calculator.lambda?
 
       # Will be using the same connection across all instance unless wanted to connect to diff instance of redis
 
