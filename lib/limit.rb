@@ -43,8 +43,8 @@ module Limit
 
     def initialize(identifier_prefix:, limit_calculator:, host: nil, port: nil, password: nil)
 
-    # @param identifier_prefix: [String] A namespace prefix for redis keys for this limiter instance
-    # @param limit_calculator: [Lambda] A method that takes a key(String) and returns hash: {max_requests: Integer, window_seconds: Integer}
+      # @param identifier_prefix: [String] A namespace prefix for redis keys for this limiter instance
+      # @param limit_calculator: [Lambda] A method that takes a key(String) and returns hash: {max_requests: Integer, window_seconds: Integer}
 
       unless identifier_prefix.is_a?(String) && !identifier_prefix.empty?
         raise ArgumentError, 'identifier_prefix must be a non-empty String'
@@ -78,7 +78,7 @@ module Limit
       raise NotImplementedError "#{self.class.name} must implement the allowed? method"
     end
 
-    def get_key(prefix)
+    def get_key(key)
       raise NotImplementedError "#{self.class.name} must implement the get_key() method"
     end
 
@@ -136,9 +136,9 @@ module Limit
       results[0] <= max_requests
     end
 
-    def get_key(prefix, window_seconds)
+    def get_key(key, window_seconds)
       time_window = (Time.now.to_i / window_seconds) * window_seconds
-      "#{@identifier_prefix}:#{prefix}:#{time_window.to_s}"
+      "#{@identifier_prefix}:#{key}:#{time_window.to_s}"
     end
   end
 
@@ -167,8 +167,8 @@ module Limit
       results[2] <= max_requests
     end
 
-    def get_key(prefix)
-      "#{@identifier_prefix}:#{prefix}"
+    def get_key(key)
+      "#{@identifier_prefix}:#{key}"
     end
   end
 
