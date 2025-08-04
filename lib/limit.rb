@@ -54,6 +54,7 @@ module Limit
 
       # Will be using the same connection across all instance unless wanted to connect to diff instance of redis
 
+      #TODO: Connection creation can be lazy
       @redis = if host && port && password
                  self.class.send(:create_connection, host: host, port: port, password: password)
                else
@@ -98,9 +99,19 @@ module Limit
     end
 
     def redis_pipeline(&block)
+      attempts ||= 0
       begin
         @redis.pipelined { |pipe| block.call(pipe) }
-      rescue Redis::CommandError => e
+      rescue Redis::CannotConnectError, Redis::TimeoutError, Redis::ConnectionError => e
+        if attempts < 3
+          @logger.warn(e.message)
+          @redis = self.class.connection
+          attempts += 1
+          retry
+        else
+          @logger.error("Error connecting to Redis: #{e.message}")
+        end
+      rescue Redis::BaseError => e
         @logger.error(e.message)
       end
     end
