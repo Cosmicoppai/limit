@@ -2,9 +2,11 @@ type redis = untyped
 
 module Limit
 
-  class BaseLimiter
+  class BaseRateLimiter
+    REQUIRED_KEYS: Array[Symbol]
     self.@logger: Logger
     self.@redis: redis
+    self.@script_sha: untyped
     @logger: Logger
 
     @redis: redis | nil
@@ -16,6 +18,10 @@ module Limit
     def self.log: (String, String) -> nil
 
     def self.logger: -> Logger
+
+    def self.load_script: -> String
+
+    def self.script_sha: -> String
 
     attr_reader identifier_prefix: String
     attr_reader limit_calculator: Proc
@@ -32,6 +38,8 @@ module Limit
 
     def log: (String, String) -> nil
 
-    def redis_pipeline: () { (redis) -> untyped } -> untyped
-end
+    def eval_sha: (Array[String], Array[Integer]) -> bool
+
+    def required_keys: -> Array[Symbol]
+  end
 end

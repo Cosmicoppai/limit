@@ -9,11 +9,13 @@ module Limit
   # Base Class, implementing:
   # - Method to connect with redis
   # - Signature for limit_calculator
-  class BaseLimiter
+  class BaseRateLimiter
     attr_reader :limit_calculator, :identifier_prefix
 
     @redis = nil
     @logger = Logger.new($stdout)
+
+    REQUIRED_KEYS = %i[max_requests window_seconds].freeze
 
     class << self
 
@@ -26,6 +28,16 @@ module Limit
 
       def logger
         @logger ||= Logger.new($stdout)
+      end
+
+      def load_script
+        script_name = name.split('::')[1].chomp('RateLimiter')
+        script_path = File.expand_path("scripts/#{script_name}.lua", __dir__)
+        @script_sha = @redis.script(:load, File.read(script_path))
+      end
+
+      def script_sha
+        @script_sha
       end
 
       private
@@ -44,7 +56,8 @@ module Limit
     def initialize(identifier_prefix:, limit_calculator:, host: nil, port: nil, password: nil)
 
       # @param identifier_prefix: [String] A namespace prefix for redis keys for this limiter instance
-      # @param limit_calculator: [Lambda] A method that takes a key(String) and returns hash: {max_requests: Integer, window_seconds: Integer}
+      # @param limit_calculator: Lambda that takes a key(String) and returns hash: {max_requests: Integer, window_seconds: Integer}
+      # But diff implementation can update the hash struct
 
       unless identifier_prefix.is_a?(String) && !identifier_prefix.empty?
         raise ArgumentError, 'identifier_prefix must be a non-empty String'
@@ -52,9 +65,8 @@ module Limit
 
       raise ArgumentError, 'limit_calculator must be a Lambda' unless limit_calculator.lambda?
 
-      # Will be using the same connection across all instance unless wanted to connect to diff instance of redis
+      # Will be using the same connection across all instances unless wanted to connect to diff instance of redis
 
-      #TODO: Connection creation can be lazy
       @redis = if host && port && password
                  self.class.send(:create_connection, host: host, port: port, password: password)
                else
@@ -73,6 +85,7 @@ module Limit
         raise e
       end
 
+      self.class.load_script
     end
 
     def allowed?(key)
@@ -80,28 +93,33 @@ module Limit
     end
 
     def get_key(key)
-      raise NotImplementedError "#{self.class.name} must implement the get_key() method"
+      "#{@identifier_prefix}:#{key}"
     end
 
 
     protected
 
+    def required_keys
+      self.class::REQUIRED_KEYS
+    end
+
     def get_current_limit(key)
       limit_data = @limit_calculator.call(key)
 
-      unless limit_data.is_a?(Hash) && limit_data[:max_requests].is_a?(Integer) && limit_data[:max_requests].positive? &&
-             limit_data[:window_seconds].is_a?(Integer) && limit_data[:window_seconds].positive?
-
-        raise ArgumentError, "Limit calculator for key '#{key}' returned invalid data: #{limit_data.inspect}. Expected { max_requests: Integer > 0, window_seconds: Integer > 0 }"
+      required_keys.all? do |key|
+        unless limit_data[key].is_a?(Integer) && limit_data[key].positive?
+          raise ArgumentError, "Limit calculator for key '#{key}' returned invalid data: #{limit_data.inspect}.\n
+          Expected #{required_keys}"
+        end
       end
 
       limit_data
     end
 
-    def redis_pipeline(&block)
+    def eval_sha(key, argv)
       attempts ||= 0
       begin
-        @redis.pipelined { |pipe| block.call(pipe) }
+        @redis.evalsha(self.class.script_sha, key, argv)
       rescue Redis::CannotConnectError, Redis::TimeoutError, Redis::ConnectionError => e
         if attempts < 3
           @logger.warn(e.message)
@@ -111,15 +129,17 @@ module Limit
         else
           @logger.error("Error connecting to Redis: #{e.message}")
         end
+      rescue Redis::CommandError => e
+        if e.message.start_with?("NOSCRIPT")
+          self.class.load_script
+          retry
+        else
+          @logger.error(e.message)
+        end
       rescue Redis::BaseError => e
         @logger.error(e.message)
       end
     end
-
-    def current_micros
-      (Time.now.to_f * 1_000_000).to_i
-    end
-
 
   end
 
@@ -128,60 +148,56 @@ module Limit
 
   # Fixed Window Rate Limiter, allows n of request in a fixed window
   # ALERT: There is a chance of bursts/spike in this method, so use it with caution
-  class FixedWindowRateLimiter < BaseLimiter
+  class FixedWindowRateLimiter < BaseRateLimiter
     def allowed?(key)
       limit_data = get_current_limit(key)
-      max_requests = limit_data[:max_requests]
-      window_seconds = limit_data[:window_seconds]
-
-      window_key = get_key(key, window_seconds)
-
-      results = redis_pipeline do |pipe|
-        # This is for simplicity as incr handles both creation and incrementing, rather than waiting on some read
-        # using the pipeline, the whole operation would also be atomic, as redis is single threaded and both queries are send in one trip
-        # https://redis.io/docs/latest/develop/use/pipelining/
-        pipe.incr(window_key)
-        pipe.expire(window_key, window_seconds)
-      end
-
-      results[0] <= max_requests
-    end
-
-    def get_key(key, window_seconds)
-      time_window = (Time.now.to_i / window_seconds) * window_seconds
-      "#{@identifier_prefix}:#{key}:#{time_window.to_s}"
+      result = eval_sha(
+        [get_key(key)],
+        [
+          limit_data[:window_seconds],
+          limit_data[:max_requests]
+        ]
+      )
+      result == 1
     end
   end
 
-  # RollingWindow Rate limiter implemented using Sliding Log, allows n no of requests in rolling window
-  class RollingWindowRateLimiter < BaseLimiter
+  # RollingWindow Rate limiter, implemented using Sliding Log, allows n no of requests in a rolling window
+  class RollingWindowRateLimiter < BaseRateLimiter
     def allowed?(key)
       limit_data = get_current_limit(key)
-      max_requests = limit_data[:max_requests]
-      window_seconds = limit_data[:window_seconds]
-
-      set_key = get_key(key)
-
-      curr_micros = current_micros
-
-      window_start_micros = curr_micros - (window_seconds*1_000_000)
-
-      results = redis_pipeline do |pipe|
-        # uses sorted set
-        # https://redis.io/glossary/redis-sorted-sets/
-        pipe.zremrangebyscore(set_key, 0, window_start_micros)
-        pipe.zadd(set_key, curr_micros, curr_micros.to_s)
-        pipe.zcard(set_key)
-        pipe.expire(set_key, window_seconds)
-      end
-
-      results[2] <= max_requests
-    end
-
-    def get_key(key)
-      "#{@identifier_prefix}:#{key}"
+      result = eval_sha(
+        [get_key(key)],
+        [
+          limit_data[:window_seconds],
+          limit_data[:max_requests]
+        ]
+      )
+      result == 1
     end
   end
 
+  # TokenBucketRateLimiter implements the token bucket algorithm that'll allow the steady refill rate
+  class TokenBucketRateLimiter < BaseRateLimiter
+
+    # limit_calculator: Lambda that takes a key(String) and returns hash:
+    # {bucket_capacity: Integer, refill_rate: Integer, refill_interval: Integer}
+
+    REQUIRED_KEYS = %i[bucket_capacity refill_rate refill_interval].freeze
+
+    def allowed?(key)
+      limit_data = get_current_limit(key)
+      result = eval_sha(
+        [get_key(key)],
+        [
+          limit_data[:bucket_capacity],
+          limit_data[:refill_rate],
+          limit_data[:refill_interval]
+        ]
+      )
+      result == 1
+    end
+
+  end
 
 end
