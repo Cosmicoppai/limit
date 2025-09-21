@@ -36,9 +36,7 @@ module Limit
         @script_sha = @redis.script(:load, File.read(script_path))
       end
 
-      def script_sha
-        @script_sha
-      end
+      attr_reader :script_sha
 
       private
 
