@@ -1,9 +1,9 @@
 
 # Limit Gem
 
-Gem that provides flexible, Redis-backed rate limiting utilities. It supports both Fixed Window and Rolling Window (Sliding Log) strategies, to easily control the number of allowed requests for a given identifier within a time window.
+Gem that provides flexible, Redis-backed rate limiting utilities. It supports Fixed Window, Rolling Window (Sliding Log), and Token Bucket strategies to control the number of allowed requests for a given identifier within a time window or with a steady refill rate.
 
-You can define rate-limiting rules dynamically using a lambda, and configure Redis via environment variables (REDIS_HOST, REDIS_PORT, REDIS_PASSWORD) or by passing connection details directly.
+You can define rate-limiting rules dynamically using a lambda and configure Redis via environment variables (REDIS_HOST, REDIS_PORT, REDIS_PASSWORD) or bypassing connection details directly.
 
 This gem is ideal for APIs, background jobs, or any system that needs simple, efficient throttling logic.
 
@@ -21,11 +21,23 @@ If you are not using Bundler, you can install the gem directly by running:
 $ gem install co-limit
 ```
 
+### Supported Rate Limiters:
+
+- **Fixed Window Rate Limiter**:
+  Allows a specified number of requests within a fixed time window. This method can cause burst traffic as it doesn't account for requests made outside of the window until it resets.
+
+- **Rolling Window Rate Limiter**:
+  Uses a sliding window mechanism, where only requests made within the last `n` seconds are counted. It provides more consistent traffic flow but can be more resource-intensive.
+
+- **Token Bucket Rate Limiter**:
+  Implements the classic token bucket algorithm. A bucket with fixed capacity refills tokens at a steady rate, allowing short bursts up to the bucket capacity while enforcing long‑term average throughput.
+
 ## Usage
 
-### Example Usage
+### Examples
 
-Here's an example of how to use the rate limiter in your application:
+#### Rolling Window Example
+Here's an example of how to use the rolling window rate limiter in your application:
 
 ```ruby
 sync_limit_calculator = lambda do |key| 
@@ -56,6 +68,91 @@ success_count += 1 if allowed
 puts "Success count: #{success_count}"  # Expected to be 11
 ```
 
+#### Fixed Window Example
+
+```ruby
+# Map keys to a fixed-window limit of N requests per M seconds
+SITE_LIMITS = {
+  x: { max_requests: 10, window_seconds: 5 },   # 10 requests per 5 seconds
+  default: { max_requests: 10, window_seconds: 60 }
+}.freeze
+
+calc = lambda do |key|
+  plan = key.split(":").last.to_sym rescue :default
+  SITE_LIMITS.fetch(plan, SITE_LIMITS[:default])
+end
+
+limiter = Limit::FixedWindowRateLimiter.new(
+  identifier_prefix: "access",
+  limit_calculator: calc
+)
+
+key = "user123:x"  # => will map to { max_requests: 10, window_seconds: 5 }
+
+# Consume up to the window limit
+allowed = 0
+12.times { allowed += 1 if limiter.allowed?(key) }
+puts allowed  # => 10
+
+# Wait until the next aligned fixed window begins to reset the counter
+window = 5
+now = Time.now
+sleep(window - (now.to_i % window) + 0.5)
+
+puts limiter.allowed?(key)  # => true (window reset)
+```
+
+#### Token Bucket Example
+
+```ruby
+# Choose a plan via the key suffix, then map it to a token bucket config
+PLANS = {
+  basic:   { bucket_capacity: 3, refill_rate: 1, refill_interval: 1 },  # 3 burst, ~1 req/s
+  premium: { bucket_capacity: 10, refill_rate: 5, refill_interval: 1 }  # 10 burst, ~5 req/s
+}.freeze
+
+calc = lambda do |key|
+  plan = key.split(":").last.to_sym rescue :basic
+  PLANS.fetch(plan, PLANS[:basic])
+end
+
+limiter = Limit::TokenBucketRateLimiter.new(
+  identifier_prefix: "access",   # identifier_prefix is used to namespace keys in Redis (consistent across all limiters)
+  limit_calculator: calc
+)
+
+key = "user123:basic"            # the final Redis key will be "access:user123:basic" via identifier_prefix
+
+# Use up to capacity immediately
+3.times { puts limiter.allowed?(key) }  # => true, true, true
+puts limiter.allowed?(key)              # => false (bucket empty)
+
+sleep 1.2                               # wait ~1s to refill ~1 token
+puts limiter.allowed?(key)              # => true
+```
+
+### Key Points:
+
+- **identifier_prefix**: A namespace prefix for Redis keys (e.g., `"access"`).
+- **limit_calculator**: A `Lambda` that takes a key (e.g., `"user_id:site_name"`) and returns a hash with `max_requests` and `window_seconds`.
+
+### Limit Hash Structure by Limiter
+
+Your `limit_calculator` lambda must return a hash whose expected keys depend on the limiter you use:
+
+- FixedWindowRateLimiter and RollingWindowRateLimiter expect:
+  `{ max_requests: Integer, window_seconds: Integer }`
+
+- TokenBucketRateLimiter expects:
+  `{ bucket_capacity: Integer, refill_rate: Integer, refill_interval: Integer }`
+
+  Meaning: `refill_rate` tokens are added every `refill_interval` seconds (e.g., `refill_rate: 1, refill_interval: 1` = 1 token/second; `refill_rate: 3, refill_interval: 2` = 1.5 tokens/second effective rate). All values must be positive integers.
+
+Notes:
+- Redis keys are stored as "#{identifier_prefix}:#{key}". Choose concise, stable keys; e.g., identifier_prefix: "access" and key: "user_id:plan" → "access:user_id:plan".
+- Ensure the keys you pass are unique per entity you want to limit (e.g., "access:user_id:plan").
+- For Token Bucket, the Redis TTL is kept around the refill interval so buckets expire when inactive.
+
 ### Redis Configuration
 
 You can configure the Redis connection either by passing the connection details as arguments or by setting environment variables.
@@ -81,19 +178,6 @@ You can configure the Redis connection either by passing the connection details 
   ```
 
   In this case, the gem will use these environment variables to establish the Redis connection.
-
-### Key Points:
-
-- **identifier_prefix**: A namespace prefix for Redis keys (e.g., `"access"`).
-- **limit_calculator**: A `Lambda` that takes a key (e.g., `"user_id:site_name"`) and returns a hash with `max_requests` and `window_seconds`.
-
-### Supported Rate Limiters:
-
-- **Fixed Window Rate Limiter**:
-  Allows a specified number of requests within a fixed time window. This method can cause burst traffic as it doesn't account for requests made outside of the window until it resets.
-
-- **Rolling Window Rate Limiter**:
-  Uses a sliding window mechanism, where only requests made within the last `n` seconds are counted. It provides more consistent traffic flow but can be more resource-intensive.
 
 ## Development
 
